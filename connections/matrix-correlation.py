@@ -30,7 +30,7 @@ matrixMul( __global float* C, __global float* A, int m,int n)
     int ty = get_local_id(1);
     
     // Index of the first sub-matrix of A processed by the block
-    int xBegin = WA * BLOCK_SIZE * by;
+    int xBegin = WA * BLOCK_SIZE * bx;
 
     // Index of the last sub-matrix of A processed by the block
     int xEnd   = xBegin + WA - 1;
@@ -39,7 +39,7 @@ matrixMul( __global float* C, __global float* A, int m,int n)
     int xStep  = BLOCK_SIZE;
 
     // Index of the first sub-matrix of X processed by the block
-    int yBegin = WA*BLOCK_SIZE * bx;
+    int yBegin = WA*BLOCK_SIZE * by;
 
     // Step size used to iterate through the sub-matrices of X
     int yStep  = BLOCK_SIZE;
@@ -104,15 +104,15 @@ queue = cl.CommandQueue(ctx,
         properties=cl.command_queue_properties.PROFILING_ENABLE)
 
 #####chose input size
-a_width = 20*block_size
-a_height = 100*block_size
+a_width = 10*block_size
+a_height = 1000*block_size
 
 c_width = a_width
 c_height = a_height
 
 h_a = numpy.random.rand(a_height, a_width).astype(numpy.float32)
-#h_a = numpy.ones(shape=(a_height, a_width)).astype(numpy.float32)
 h_c = numpy.empty((a_height, a_height)).astype(numpy.float32)
+print h_a.shape
 m=a_width;
 n=a_height;
 
