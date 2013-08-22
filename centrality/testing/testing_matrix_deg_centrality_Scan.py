@@ -1,5 +1,5 @@
 # PyOpenCl Degree Centrality by Alexander Sch\"afer
-# based on examples by andreas kl\"ockner popencl development page, its mostly just a new context here
+# based on examples by andreas kl\"ockner popencl development page
 # speed up has to be taken with caution, it is mainly driven by the tresholding,
 # no warranty, please check for errors
 
@@ -20,7 +20,7 @@ scan_kernel = GenericScanKernel(
         arguments="__global float *ary, __global int segflag,__global float threshold",
         input_expr="(ary[i] < threshold) ? 0 : 1",
         scan_expr="across_seg_boundary ? b: (a+b)", neutral="0",is_segment_start_expr="(i)%segflag==0",
-        output_statement="ary[i] = item+1;")
+        output_statement="ary[i] = item;")
 
 runs=15
 cpu_time_array=np.zeros(runs-1)
@@ -68,7 +68,8 @@ for k in range(1,runs):
 
     # transfer device -> host -----------------------------------------------------
     t1 = time()
-    #cl.enqueue_copy(queue, h_c, d_c_buf)
+    result= a_gpu.get();
+    centrality=result[h_b_int-1:h_b_int*h_b_int:h_b_int] ##extracting the sum of the rows, is there a more efficent way?
     pull_time = time()-t1
 
     # timing output ---------------------------------------------------------------
@@ -93,7 +94,6 @@ for k in range(1,runs):
     h_c_cpu = np.sum(h_a_numpy,axis=1)
     cpu_time = time()-t1
     print
-    print "GPU:",(a_gpu)
     ##print "GPU-CPU:",(a_gpu-h_c_cpu)
     print
     print "CPU time (s)", cpu_time
@@ -113,7 +113,7 @@ plt.xlabel('pixel squared')
 plt.ylabel('time needed (s)')
 plt.title('Performance Test for PyOpenCL vs. Numpy ')
 plt.legend(loc=2)
-plt.savefig('performance.png')
+plt.savefig('performance.png',dpi=300)
 plt.show()
 
 plt.plot(range(1*50*block_size,runs*50*block_size,50*block_size),cpu_time_array/gpu_time_array,'r', label='GPU speedup (without mem transfer)',linewidth=2.0)
@@ -122,7 +122,7 @@ plt.plot(range(1*50*block_size,runs*50*block_size,50*block_size),cpu_time_array/
 plt.legend(loc=4)
 plt.xlabel('pixel squared')
 plt.ylabel('speed up')
-#plt.ylim( (12, 34) )
+#plt.ylim( (0, 120) )
 plt.title('Speedup With and Without Memory Transfer')
-plt.savefig('speedup.png')
+plt.savefig('speedup.png',dpi=300)
 plt.show()
