@@ -1,5 +1,5 @@
 # PyOpenCl Degree Centrality by Alexander Sch\"afer
-# based on examples by andreas kl\"ockner popencl development page, its mostly just a new context here
+# based on examples by andreas kl\"ockner popencl development page
 # speed up has to be taken with caution, it is mainly driven by the tresholding,
 # no warranty, please check for errors
 
@@ -28,14 +28,14 @@ ctx=cl.create_some_context()
 
 queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
 
-threshold=0.1;
+threshold=0.5;
 from pyopencl.scan import GenericScanKernel
 scan_kernel = GenericScanKernel(
         ctx, np.float32,
         arguments="__global float *ary, __global int segflag,__global float threshold",
         input_expr="(ary[i] < threshold) ? 0 : 1",
         scan_expr="across_seg_boundary ? b: (a+b)", neutral="0",is_segment_start_expr="(i)%segflag==0",
-        output_statement="ary[i] = item+1;")
+        output_statement="(ary[i] = item);")
 
 
 # transfer host -> device -----------------------------------------------------
@@ -48,7 +48,7 @@ a_gpu=cl.array.to_device(queue,h_a)
 push_time = time()-t1
 
 # warmup ----------------------------------------------------------------------
-for i in range(5):
+for i in range(0):
     event = scan_kernel(a_gpu,h_b_int,threshold,queue=queue)
     event.wait()
 
@@ -57,7 +57,7 @@ queue.finish()
 # actual benchmark ------------------------------------------------------------
 t1 = time()
 
-count =20
+count =1
 for i in range(count):
     event = scan_kernel(a_gpu,h_b_int,threshold,queue=queue)
 
@@ -68,8 +68,10 @@ gpu_time = (time()-t1)/count
 # transfer device -> host -----------------------------------------------------
 t1 = time()
 #cl.enqueue_copy(queue, h_c, d_c_buf)
+result= a_gpu.get();
+centrality=result[h_b_int-1:h_b_int*h_b_int:h_b_int] ##extracting the sum of the rows, is there a more efficent way?
 pull_time = time()-t1
-
+print centrality
 # timing output ---------------------------------------------------------------
 gpu_total_time = gpu_time+push_time+pull_time
 
@@ -92,7 +94,6 @@ h_a_numpy[h_a_numpy>threshold] =1.0;
 h_c_cpu = np.sum(h_a_numpy,axis=1)
 cpu_time = time()-t1
 print
-print "GPU:",(a_gpu)
 ##print "GPU-CPU:",(a_gpu-h_c_cpu)
 print
 print "CPU time (s)", cpu_time
