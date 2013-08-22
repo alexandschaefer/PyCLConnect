@@ -11,7 +11,7 @@ from pyopencl.scan import GenericScanKernel
 
 #####chose input size
 block_size = 16
-a_height = 10000 #800*block_size
+a_height = 10000#800*block_size
 a_width = 10000#800*block_size
 h_b_int = 10000#800*block_size
 
@@ -19,6 +19,7 @@ c_width = a_width
 c_height = a_height
 
 h_a = np.random.rand(a_height*a_height).astype(np.float32)
+h_result = np.random.rand(a_height).astype(np.float32)
 h_a_numpy = np.random.rand(a_height,a_height) ###numpy prefers matrices
 print h_a
 
@@ -32,10 +33,10 @@ threshold=0.5;
 from pyopencl.scan import GenericScanKernel
 scan_kernel = GenericScanKernel(
         ctx, np.float32,
-        arguments="__global float *ary, __global int segflag,__global float threshold",
+        arguments="__global float *ary,__global float *out, __global int segflag,__global float threshold",
         input_expr="(ary[i] < threshold) ? 0 : 1",
         scan_expr="across_seg_boundary ? b: (a+b)", neutral="0",is_segment_start_expr="(i)%segflag==0",
-        output_statement="(ary[i] = item);")
+        output_statement="(i+1)%segflag==0 ? (out[i/segflag] = item,ary[i] = item) : (ary[i] = item);")
 
 
 # transfer host -> device -----------------------------------------------------
@@ -44,12 +45,12 @@ mf = cl.mem_flags
 t1 = time()
 
 a_gpu=cl.array.to_device(queue,h_a)
-
+result_gpu=cl.array.to_device(queue,h_result)
 push_time = time()-t1
 
 # warmup ----------------------------------------------------------------------
 for i in range(0):
-    event = scan_kernel(a_gpu,h_b_int,threshold,queue=queue)
+    event = scan_kernel(a_gpu,result_gpu,h_b_int,threshold,queue=queue)
     event.wait()
 
 queue.finish()
@@ -59,7 +60,7 @@ t1 = time()
 
 count =1
 for i in range(count):
-    event = scan_kernel(a_gpu,h_b_int,threshold,queue=queue)
+    event = scan_kernel(a_gpu,result_gpu,h_b_int,threshold,queue=queue)
 
 event.wait()
 
@@ -68,10 +69,15 @@ gpu_time = (time()-t1)/count
 # transfer device -> host -----------------------------------------------------
 t1 = time()
 #cl.enqueue_copy(queue, h_c, d_c_buf)
-result= a_gpu.get();
-centrality=result[h_b_int-1:h_b_int*h_b_int:h_b_int] ##extracting the sum of the rows, is there a more efficent way?
+
+gpu_centrality= result_gpu.get(); ##check if everything is correct
+
 pull_time = time()-t1
+result= a_gpu.get();
+centrality=result[h_b_int-1:h_b_int*h_b_int:h_b_int] 
 print centrality
+print gpu_centrality
+print result
 # timing output ---------------------------------------------------------------
 gpu_total_time = gpu_time+push_time+pull_time
 
