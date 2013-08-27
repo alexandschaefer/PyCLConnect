@@ -93,102 +93,45 @@ import pyopencl as cl
 from time import time
 import numpy
 
-block_size = 16
+def matrix_correlation(h_a,a_width,a_height):
+    block_size = 16
+    ctx = cl.create_some_context()
+    for dev in ctx.devices:
+        assert dev.local_mem_size > 0
+    queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
 
-ctx = cl.create_some_context()
+    h_c = numpy.empty((a_height, a_height)).astype(numpy.float32)
+    m=a_width;
+    n=a_height;
 
-for dev in ctx.devices:
-    assert dev.local_mem_size > 0
+    kernel_params = {"block_size": block_size, "w_a":a_width, "h_a":a_height}
 
-queue = cl.CommandQueue(ctx,
-        properties=cl.command_queue_properties.PROFILING_ENABLE)
+    if "NVIDIA" in queue.device.vendor:
+        options = "-cl-mad-enable -cl-fast-relaxed-math"
+    else:
+        options = ""
+    prg = cl.Program(ctx, KERNEL_CODE % kernel_params,
+            ).build(options=options)
+    kernel = prg.matrixMul
+    assert a_width % block_size == 0
+    assert a_height % block_size == 0
 
-#####chose input size
-a_width = 10*block_size
-a_height = 1000*block_size
-
-c_width = a_width
-c_height = a_height
-
-h_a = numpy.random.rand(a_height, a_width).astype(numpy.float32)
-h_c = numpy.empty((a_height, a_height)).astype(numpy.float32)
-print h_a.shape
-m=a_width;
-n=a_height;
-
-kernel_params = {"block_size": block_size, "w_a":a_width, "h_a":a_height}
-
-if "NVIDIA" in queue.device.vendor:
-    options = "-cl-mad-enable -cl-fast-relaxed-math"
-else:
-    options = ""
-prg = cl.Program(ctx, KERNEL_CODE % kernel_params,
-        ).build(options=options)
-kernel = prg.matrixMul
-
-
-assert a_width % block_size == 0
-assert a_height % block_size == 0
-
-# transfer host -> device -----------------------------------------------------
-mf = cl.mem_flags
-
-t1 = time()
-
-d_a_buf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h_a)
-d_c_buf = cl.Buffer(ctx, mf.WRITE_ONLY, size=h_c.nbytes)
-
-push_time = time()-t1
-
-# warmup ----------------------------------------------------------------------
-for i in range(5):
-    event = kernel(queue, h_c.shape[::-1], (block_size, block_size), d_c_buf, d_a_buf, numpy.uint32(m),numpy.uint32(n))
+    # transfer host -> device -----------------------------------------------------
+    mf = cl.mem_flags
+    d_a_buf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h_a)
+    d_c_buf = cl.Buffer(ctx, mf.WRITE_ONLY, size=h_c.nbytes)
+    event = kernel(queue, h_c.shape[::-1], (block_size, block_size),d_c_buf, d_a_buf,numpy.uint32(m),numpy.uint32(n))
     event.wait()
 
-queue.finish()
+    # transfer device -> host -----------------------------------------------------
+    cl.enqueue_copy(queue, h_c, d_c_buf)
+    return h_c
 
-# actual benchmark ------------------------------------------------------------
-t1 = time()
-
-count = 20
-for i in range(count):
-    event = kernel(queue, h_c.shape[::-1], (block_size, block_size),d_c_buf, d_a_buf,numpy.uint32(m),numpy.uint32(n))
-
-event.wait()
-
-gpu_time = (time()-t1)/count
-
-# transfer device -> host -----------------------------------------------------
-t1 = time()
-cl.enqueue_copy(queue, h_c, d_c_buf)
-pull_time = time()-t1
-
-# timing output ---------------------------------------------------------------
-gpu_total_time = gpu_time+push_time+pull_time
-
-print "GPU push+compute+pull total [s]:", gpu_total_time
-print "GPU push [s]:", push_time
-print "GPU pull [s]:", pull_time
-print "GPU compute (host-timed) [s]:", gpu_time
-print "GPU compute (event-timed) [s]: ", (event.profile.end-event.profile.start)*1e-9
-
-gflop = h_c.size * (a_width * 2.) / (1000**3.)
-gflops = gflop / gpu_time
-
-print
-print "GFlops/s:", gflops
-
-# cpu comparison --------------------------------------------------------------
-t1 = time()
-h_c_cpu = numpy.corrcoef(h_a)
-cpu_time = time()-t1
-
-print
-print "GPU-CPU:",(h_c-h_c_cpu)
-print
-print "CPU time (s)", cpu_time
-print
-
-print "GPU speedup (with transfer): ", cpu_time/gpu_total_time
-print "GPU speedup (without transfer): ", cpu_time/gpu_time
-
+def test_correlation():
+    block_size = 16
+    a_width = 10*block_size
+    a_height = 500*block_size ##results in a 8000x160 input matrix
+    h_a = numpy.random.rand(a_height, a_width).astype(numpy.float32)
+    h_c=matrix_correlation(h_a,a_width,a_height)
+    h_c_cpu = numpy.corrcoef(h_a)
+    print "GPU-CPU:",(h_c-h_c_cpu)
